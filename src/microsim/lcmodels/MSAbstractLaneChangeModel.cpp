@@ -48,6 +48,7 @@
 #include "MSLCM_DK2008.h"
 #include "MSLCM_LC2013.h"
 #include "MSLCM_SL2015.h"
+#include "MSLCM_LCMY.h"
 #include "MSAbstractLaneChangeModel.h"
 
 /* -------------------------------------------------------------------------
@@ -88,6 +89,8 @@ MSAbstractLaneChangeModel::build(LaneChangeModel lcm, MSVehicle& v) {
             return new MSLCM_LC2013(v);
         case LaneChangeModel::SL2015:
             return new MSLCM_SL2015(v);
+        case LaneChangeModel::LCMY:
+            return new MSLCM_LCMY(v);
         case LaneChangeModel::DEFAULT:
             if (MSGlobals::gLateralResolution <= 0) {
                 return new MSLCM_LC2013(v);

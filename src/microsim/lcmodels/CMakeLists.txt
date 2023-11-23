@@ -9,6 +9,8 @@ set(microsim_lcmodels_STAT_SRCS
    MSLCM_LC2013.h
    MSLCM_SL2015.cpp
    MSLCM_SL2015.h
+   MSLCM_LCMY.cpp
+   MSLCM_LCMY.h
 )
 
 add_library(microsim_lcmodels STATIC ${microsim_lcmodels_STAT_SRCS})
