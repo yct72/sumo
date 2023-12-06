@@ -140,6 +140,7 @@ MSLCM_LCMY::initDerivedParameters() {
         myChangeProbThresholdRight = std::numeric_limits<double>::max();
         myChangeProbThresholdLeft = std::numeric_limits<double>::max();
     } else {
+        // NOTES: mySpeedGainRight: 0.1 -> 這樣除完就是 2.0 ! (看論文)
         myChangeProbThresholdRight = (0.2 / mySpeedGainRight) / mySpeedGainParam;
         myChangeProbThresholdLeft = 0.2 / mySpeedGainParam;
     }
@@ -157,7 +158,7 @@ MSLCM_LCMY::wantsChange(
     int laneOffset,
     MSAbstractLaneChangeModel::MSLCMessager& msgPass,
     int blocked,
-    const std::pair<MSVehicle*, double>& leader,
+    const std::pair<MSVehicle*, double>& leader, // NOTES: vehicle, gap
     const std::pair<MSVehicle*, double>& follower,
     const std::pair<MSVehicle*, double>& neighLead,
     const std::pair<MSVehicle*, double>& neighFollow,
@@ -223,6 +224,7 @@ MSLCM_LCMY::patchSpeed(const double min, const double wanted, const double max, 
 
     return newSpeed;
 }
+
 
 
 double
@@ -1053,7 +1055,7 @@ MSLCM_LCMY::getExtraReservation(int bestLaneOffset) const {
     if (bestLaneOffset < -1) {
         return 20;
     } else if (bestLaneOffset > 1) {
-        return 40;
+        return 20;
     }
     return 0;
 }
@@ -1093,7 +1095,7 @@ MSLCM_LCMY::_wantsChange(
     int laneOffset,
     MSAbstractLaneChangeModel::MSLCMessager& msgPass,
     int blocked,
-    const std::pair<MSVehicle*, double>& leader,
+    const std::pair<MSVehicle*, double>& leader, // NOTES: leader, leader to me distance
     const std::pair<MSVehicle*, double>& follower,
     const std::pair<MSVehicle*, double>& neighLead,
     const std::pair<MSVehicle*, double>& neighFollow,
@@ -1115,6 +1117,7 @@ MSLCM_LCMY::_wantsChange(
     int currIdx = 0;
     const bool checkOpposite = &neighLane.getEdge() != &myVehicle.getLane()->getEdge();
     const MSLane* prebLane = myVehicle.getLane();
+    // NOTES: 處理 internal edge
     if (prebLane->getEdge().isInternal()) {
         // internal edges are not kept inside the bestLanes structure
         if (isOpposite()) {
@@ -1123,17 +1126,18 @@ MSLCM_LCMY::_wantsChange(
             prebLane = prebLane->getLinkCont()[0]->getLane();
         }
     }
+    // NOTES: 產生 curr, neigh, best 
     // special case: vehicle considers changing to the opposite direction edge
     const int prebOffset = laneOffset;
     for (int p = 0; p < (int) preb.size(); ++p) {
-        //if (DEBUG_COND) {
-        //    std::cout << "  p=" << p << " prebLane=" << prebLane->getID() << " preb.p=" << preb[p].lane->getID() << "\n";
-        //}
+        if (DEBUG_COND) {
+           std::cout << "  p=" << p << " prebLane=" << prebLane->getID() << " preb.p=" << preb[p].lane->getID() << "\n";
+        }
         if (preb[p].lane == prebLane && p + laneOffset >= 0) {
             assert(p + prebOffset < (int)preb.size());
             curr = preb[p];
             neigh = preb[p + prebOffset];
-            currentDist = curr.length;
+            currentDist = curr.length; // NOTES: pos
             neighDist = neigh.length;
             bestLaneOffset = curr.bestLaneOffset;
             if (bestLaneOffset == 0 && preb[p + prebOffset].bestLaneOffset == 0 && !checkOpposite) {
@@ -1160,6 +1164,7 @@ MSLCM_LCMY::_wantsChange(
     const bool right = (laneOffset == -1);
     const double posOnLane = getForwardPos();
     double driveToNextStop = -std::numeric_limits<double>::max();
+    // NOTES: 處理 stop
     if (myVehicle.nextStopDist() < std::numeric_limits<double>::max()
             && &myVehicle.getNextStop().lane->getEdge() == &myVehicle.getLane()->getEdge()) {
         // vehicle can always drive up to stop distance
@@ -1181,14 +1186,15 @@ MSLCM_LCMY::_wantsChange(
         currentDist = MAX2(currentDist, stopPos);
         neighDist = MAX2(neighDist, stopPos);
     }
-    const int lca = (right ? LCA_RIGHT : LCA_LEFT);
-    const int myLca = (right ? LCA_MRIGHT : LCA_MLEFT);
-    const int lcaCounter = (right ? LCA_LEFT : LCA_RIGHT);
+    const int lca = (right ? LCA_RIGHT : LCA_LEFT); // NOTES: wants to go to right/left
+    const int myLca = (right ? LCA_MRIGHT : LCA_MLEFT); // NOTES: originally model state
+    const int lcaCounter = (right ? LCA_LEFT : LCA_RIGHT);// NOTES: 反向
     bool changeToBest = (right && bestLaneOffset < 0) || (!right && bestLaneOffset > 0);
     // keep information about being a leader/follower
     int ret = (myOwnState & 0xffff0000);
     int req = 0; // the request to change or stay
 
+    // NOTES: slow down, maybe add ret state: LCA_AMBACKBLOCKER_STANDING, LCA_AMBACKBLOCKER 
     ret = slowDownForBlocked(lastBlocked, ret);
     if (lastBlocked != firstBlocked) {
         ret = slowDownForBlocked(firstBlocked, ret);
@@ -1227,9 +1233,10 @@ MSLCM_LCMY::_wantsChange(
 
     // we do not want the lookahead distance to change all the time so we let it decay slowly
     // (in contrast, growth is applied instantaneously)
-    if (myVehicle.getSpeed() > myLookAheadSpeed) {
+    if (myVehicle.getSpeed() > myLookAheadSpeed) { // NOTES: lookAheadSpeed: the presumed speed while approaching the end of the dead lane
         myLookAheadSpeed = myVehicle.getSpeed();
-    } else {
+    } 
+    else {
         // memory decay factor for this action step
         const double memoryFactor = 1. - (1. - LOOK_AHEAD_SPEED_MEMORY) * myVehicle.getActionStepLengthSecs();
         assert(memoryFactor > 0.);
@@ -1237,16 +1244,26 @@ MSLCM_LCMY::_wantsChange(
                                 (memoryFactor * myLookAheadSpeed + (1 - memoryFactor) * myVehicle.getSpeed()));
     }
     // myLookAheadLeft: 2
+    // NOTES: change myLookaheadLeft from 2 to 1 (default is 2)
+    myLookaheadLeft = 1;
+    // NOTES: myStrategicParam = lcStrategic.
+    /* 
+        // NOTES: lcStrategic
+        The eagerness for performing strategic lane changing. Higher values result in earlier lane-changing.
+        default: 1.0, range [0-inf), -1 A value of 0 sets the lookahead-distance to 0 (vehicles can still change at the end of their lane) whereas -1 disables strategic changing completely.
+    */
     double laDist = myLookAheadSpeed * LOOK_FORWARD * myStrategicParam * (right ? 1 : myLookaheadLeft);
     laDist += myVehicle.getVehicleType().getLengthWithGap() *  2.;
     const bool hasStoppedLeader = leader.first != 0 && leader.first->isStopped() && leader.second < (currentDist - posOnLane);
     const bool hasBidiLeader = myVehicle.getLane()->getBidiLane() != nullptr && MSLCHelper::isBidiLeader(leader.first, curr.bestContinuations);
     const bool hasBidiNeighLeader = neighLane.getBidiLane() != nullptr && MSLCHelper::isBidiLeader(neighLead.first, neigh.bestContinuations);
 
+    // NOTES: bestLaneOffset 是 0 - 代表沒有要換，但可以換到最近的 bestLane?
     if (bestLaneOffset == 0 && hasBidiLeader) {
         // getting out of the way is enough to clear the blockage
         laDist = 0;
-    } else if (bestLaneOffset == 0 && hasStoppedLeader) {
+    } 
+    else if (bestLaneOffset == 0 && hasStoppedLeader) {
         // react to a stopped leader on the current lane
         // The value of laDist is doubled below for the check whether the lc-maneuver can be taken out
         // on the remaining distance (because the vehicle has to change back and forth). Therefore multiply with 0.5.
@@ -1279,13 +1296,13 @@ MSLCM_LCMY::_wantsChange(
     // @note: while this lets vehicles change earlier into the correct direction
     // it also makes the vehicles more "selfish" and prevents changes which are necessary to help others
 
-
-
+    // NOTES: 圓環，沒有的話 roundaboutBonus = 0
     // Next we assign to roundabout edges a larger distance than to normal edges
     // in order to decrease sense of lc urgency and induce higher usage of inner roundabout lanes.
     const double roundaboutBonus = MSLCHelper::getRoundaboutDistBonus(myVehicle, myRoundaboutBonus, curr, neigh, best);
     currentDist += roundaboutBonus;
     neighDist += roundaboutBonus;
+    // NOTES: d-o < ...
     // d: currentDist - posOnLane
     // o: best.occupation * JAM_FACTOR
     const double usableDist = MAX2(currentDist - posOnLane - best.occupation * JAM_FACTOR, driveToNextStop);
@@ -1326,11 +1343,14 @@ MSLCM_LCMY::_wantsChange(
     bool changeLeftToAvoidOvertakeRight = false;
     if (changeToBest && bestLaneOffset == curr.bestLaneOffset
             && currentDistDisallows(usableDist, bestLaneOffset, laDist)) {
+        // NOTES: 那條 d-o < ... 的式子滿足 -> urgent
         /// @brief we urgently need to change lanes to follow our route
         ret = ret | lca | LCA_STRATEGIC | LCA_URGENT;
-    } else {
+    } 
+    else {
         // VARIANT_20 (noOvertakeRight)
         if (neighLead.first != 0 && checkOverTakeRight && !right) {
+            // NOTES: 處理從右側超車
             // check for slower leader on the left. we should not overtake but
             // rather move left ourselves (unless congested)
             MSVehicle* nv = neighLead.first;
@@ -1379,6 +1399,7 @@ MSLCM_LCMY::_wantsChange(
         const double overtakeDist = (leader.first == 0 || hasBidiLeader ? -1 :
                                      leader.second + myVehicle.getVehicleType().getLength() + leader.first->getVehicleType().getLengthWithGap());
         if (leader.first != 0 && (leader.first->isStopped() || hasBidiLeader) && leader.second < REACT_TO_STOPPED_DISTANCE
+                // NOTES: overtake stopped leader (我們不用，因為假設沒有 stopeed leader)
                 // current destination leaves enough space to overtake the leader
                 && MIN2(neighDist, currentDist) - posOnLane > overtakeDist
                 // maybe do not overtake on the right at high speed
@@ -1399,6 +1420,7 @@ MSLCM_LCMY::_wantsChange(
 #endif
             ret = ret | lca | LCA_STRATEGIC | LCA_URGENT;
         } else if (!changeToBest && currentDistDisallows(neighLeftPlace, abs(bestLaneOffset) + 2, laDist) && !hasBidiLeader) {
+            // NOTES: 反向 
             // the opposite lane-changing direction should be done than the one examined herein
             //  we'll check whether we assume we could change anyhow and get back in time...
             //
@@ -1412,6 +1434,7 @@ MSLCM_LCMY::_wantsChange(
 #endif
             ret = ret | LCA_STAY | LCA_STRATEGIC;
         } else if (bestLaneOffset == 0 && (neighLeftPlace * 2. < laDist)) {
+            // NOTES: 避免快到 lane's end 的時候 lc 
             // the current lane is the best and a lane-changing would cause a situation
             //  of which we assume we will not be able to return to the lane we have to be on.
             // this rule prevents the vehicle from leaving the current, best lane when it is
@@ -1432,6 +1455,7 @@ MSLCM_LCMY::_wantsChange(
                        // lane changing cannot possibly help
                        || (myStrategicParam < 0 && currFreeUntilNeighEnd))
                   ) {
+                    // NOTES: 除非 leader stop 或遇到圓環才離開 best lane
             // VARIANT_21 (stayOnBest)
             // we do not want to leave the best lane for a lane which leads elsewhere
             // unless our leader is stopped or we are approaching a roundabout
@@ -1443,6 +1467,7 @@ MSLCM_LCMY::_wantsChange(
             ret = ret | LCA_STAY | LCA_STRATEGIC;
         }
     }
+    // NOTES: 讓 traCI 介入
     // check for overriding TraCI requests
 #ifdef DEBUG_WANTS_CHANGE
     if (DEBUG_COND) {
@@ -1450,29 +1475,39 @@ MSLCM_LCMY::_wantsChange(
     }
 #endif
     // store state before canceling
-    getCanceledState(laneOffset) |= ret;
+    getCanceledState(laneOffset) |= ret; // NOTES: getCanceledState(laneOffset) = 0 (LC_NONE)
     ret = myVehicle.influenceChangeDecision(ret);
     if ((ret & lcaCounter) != 0) {
         // we are not interested in traci requests for the opposite direction here
-        ret &= ~(LCA_TRACI | lcaCounter | LCA_URGENT);
+        ret &= ~(LCA_TRACI | lcaCounter | LCA_URGENT); // NOTES: 只理相同方向的 request，方向不同的把它清掉
     }
 #ifdef DEBUG_WANTS_CHANGE
     if (DEBUG_COND) {
         std::cout << " retAfterInfluence=" << toString((LaneChangeAction)ret) << "\n";
     }
 #endif
-
     if ((ret & LCA_STAY) != 0) {
         // remove TraCI flags because it should not be included in "state-without-traci"
         ret = getCanceledState(laneOffset);
         return ret;
     }
+    // NOTES: 換車道 !
     if ((ret & LCA_URGENT) != 0) {
         // prepare urgent lane change maneuver
         // save the left space
         myLeftSpace = currentDist - posOnLane;
-        if (changeToBest && abs(bestLaneOffset) > 1) {
+        if (changeToBest && abs(bestLaneOffset) > 1) { 
+            // NOTES: 決定換的時候，要考慮 counter-lane-change
             // there might be a vehicle which needs to counter-lane-change one lane further and we cannot see it yet
+            /*
+                // NOTES: from paper
+                Unfortunately, dead-lock situations can still arise if vehicles need to perform strategic lane changes across multiple lanes. 
+                In this case, a counterLaneChange situation can arise at a time where both vehicles have already reached the dead-end and are unable to move.
+                To prevent this, vehicles reserve additional space in front of the dead-end whenever they have to change across more than one lane (new).
+                Currently, additional space of 20m is reserved for vehicles which need to change to the right across and 40m for vehicles which need to change to the left. 
+                The asymmetry is necessary to prevent yet another type of deadlock.
+            */
+            // NOTES: myLeadingBlockLength: MAX(blockerLength = currentDist - stopPos, 0)
             myLeadingBlockerLength = MAX2((right ? 20.0 : 40.0), myLeadingBlockerLength);
 #ifdef DEBUG_WANTS_CHANGE
             if (DEBUG_COND) {
@@ -1506,10 +1541,11 @@ MSLCM_LCMY::_wantsChange(
                                          MAX2(STEPS2TIME(TS), myLeftSpace / MAX2(myLookAheadSpeed, NUMERICAL_EPS) / remainingLanes / urgency) :
                                          myVehicle.getInfluencer().changeRequestRemainingSeconds(currentTime));
         if (!hasBidiNeighLeader) {
-            const double plannedSpeed = informLeader(msgPass, blocked, myLca, neighLead, remainingSeconds);
+            const double plannedSpeed = informLeader(msgPass, blocked, myLca, neighLead, remainingSeconds); // NOTES: >=0 means following, -1 means overtake
             // NOTE: for the  ballistic update case negative speeds may indicate a stop request,
             //       while informLeader returns -1 in that case. Refs. #2577
             if (plannedSpeed >= 0 || (!MSGlobals::gSemiImplicitEulerUpdate && plannedSpeed != -1)) {
+                // NOTES: 如果要繼續 follow
                 // maybe we need to deal with a blocking follower
                 const bool hasBidiNeighFollower = neighLane.getBidiLane() != nullptr && MSLCHelper::isBidiFollower(&myVehicle, neighFollow.first);
                 if (!hasBidiNeighFollower) {
@@ -1543,7 +1579,8 @@ MSLCM_LCMY::_wantsChange(
         ret = getCanceledState(laneOffset);
         return ret;
     }
-
+    
+    // NOTES: 計算換車道後的速度、是否不便
     // we wish to anticipate future speeds. This is difficult when the leading
     // vehicles are still accelerating so we resort to comparing speeds for the near future (1s) in this case
     const bool acceleratingLeader = (neighLead.first != 0 && neighLead.first->getAcceleration() > 0)
@@ -1568,6 +1605,7 @@ MSLCM_LCMY::_wantsChange(
 
     const bool speedGainInconvenient = inconvenience > myCooperativeParam;
     const bool neighOccupancyInconvenient = neigh.lane->getBruttoOccupancy() > curr.lane->getBruttoOccupancy();
+    
 #ifdef DEBUG_WANTS_CHANGE
     if (DEBUG_COND) {
         std::cout << STEPS2TIME(currentTime)
@@ -1582,6 +1620,7 @@ MSLCM_LCMY::_wantsChange(
 #endif
 
     // VARIANT_15
+    // NOTES: 圓環(我們不用)
     if (roundaboutBonus > 0) {
 
 #ifdef DEBUG_WANTS_CHANGE
@@ -1613,7 +1652,8 @@ MSLCM_LCMY::_wantsChange(
             return ret | req;
         }
     }
-
+    
+    // NOTES: 高速公路(我們不用)
     // let's also regard the case where the vehicle is driving on a highway...
     //  in this case, we do not want to get to the dead-end of an on-ramp
     if (right) {
@@ -1631,6 +1671,7 @@ MSLCM_LCMY::_wantsChange(
     }
     // --------
 
+    // NOTES: change to help
     // -------- make place on current lane if blocking follower
     //if (amBlockingFollowerPlusNB()) {
     //    std::cout << myVehicle.getID() << ", " << currentDistAllows(neighDist, bestLaneOffset, laDist)
@@ -1638,7 +1679,6 @@ MSLCM_LCMY::_wantsChange(
     //        << " currentDist=" << currentDist
     //        << "\n";
     //}
-
     if (amBlockingFollowerPlusNB()
             && (!speedGainInconvenient)
             && ((myOwnState & myLca) != 0) // VARIANT_6 : counterNoHelp
@@ -1660,7 +1700,6 @@ MSLCM_LCMY::_wantsChange(
             return ret | req;
         }
     }
-
     // --------
 
 
@@ -1676,15 +1715,16 @@ MSLCM_LCMY::_wantsChange(
     //    return ret;
     //}
 
+    // NOTES: pedestrians
     if (neighLane.getEdge().getPersons().size() > 0) {
         // react to pedestrians
         adaptSpeedToPedestrians(myVehicle.getLane(), thisLaneVSafe);
         adaptSpeedToPedestrians(&neighLane, neighLaneVSafe);
     }
-
+    
     const double relativeGain = (neighLaneVSafe - thisLaneVSafe) / MAX2(neighLaneVSafe,
                                 RELGAIN_NORMALIZATION_MIN_SPEED);
-
+    
 #ifdef DEBUG_WANTS_CHANGE
     if (DEBUG_COND) {
         std::cout << STEPS2TIME(currentTime)
@@ -1698,6 +1738,7 @@ MSLCM_LCMY::_wantsChange(
     }
 #endif
 
+    // NOTES: for changing to the right (我們不用?)
     if (right) {
         // ONLY FOR CHANGING TO THE RIGHT
         if (thisLaneVSafe - 5 / 3.6 > neighLaneVSafe) {
@@ -1819,6 +1860,7 @@ MSLCM_LCMY::_wantsChange(
             }
         }
     } else {
+        // NOTES: change to left
         // ONLY FOR CHANGING TO THE LEFT
         if (thisLaneVSafe > neighLaneVSafe) {
             // this lane is better
@@ -1866,6 +1908,7 @@ MSLCM_LCMY::_wantsChange(
             }
         }
     }
+    
     // --------
     if (changeToBest && bestLaneOffset == curr.bestLaneOffset
             && myStrategicParam >= 0
@@ -1961,7 +2004,7 @@ MSLCM_LCMY::slowDownForBlocked(MSVehicle** blocked, int state) {
                       << "\n";
         }
 #endif
-        if (gap > POSITION_EPS) {
+        if (gap > POSITION_EPS) { // NOTES: POSITION_EPS defines the epsilon to use on position comparison
             //const bool blockedWantsUrgentRight = (((*blocked)->getLaneChangeModel().getOwnState() & LCA_RIGHT != 0)
             //    && ((*blocked)->getLaneChangeModel().getOwnState() & LCA_URGENT != 0));
 
@@ -1969,7 +2012,7 @@ MSLCM_LCMY::slowDownForBlocked(MSVehicle** blocked, int state) {
                     //|| blockedWantsUrgentRight  // VARIANT_10 (helpblockedRight)
                ) {
                 if ((*blocked)->getSpeed() < SUMO_const_haltingSpeed) {
-                    state |= LCA_AMBACKBLOCKER_STANDING;
+                    state |= LCA_AMBACKBLOCKER_STANDING; // NOTES: the blocked is halting
                 } else {
                     state |= LCA_AMBACKBLOCKER;
                 }
