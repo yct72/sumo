@@ -1103,6 +1103,16 @@ MSLCM_LCMY::_wantsChange(
     const std::vector<MSVehicle::LaneQ>& preb,
     MSVehicle** lastBlocked,
     MSVehicle** firstBlocked) {
+    if (DEBUG_COND) {
+        std::cout << "flag" << std::endl;
+    }
+    // NOTES: assumptions
+    /*
+        - not on highway
+        - no roundabout
+        - not consider obligation to clear the overtaking lane
+        - no internal edge
+    */
     assert(laneOffset == 1 || laneOffset == -1);
     const SUMOTime currentTime = MSNet::getInstance()->getCurrentTimeStep();
     // compute bestLaneOffset
@@ -1117,6 +1127,7 @@ MSLCM_LCMY::_wantsChange(
     int currIdx = 0;
     const bool checkOpposite = &neighLane.getEdge() != &myVehicle.getLane()->getEdge();
     const MSLane* prebLane = myVehicle.getLane();
+    /*
     // NOTES: 處理 internal edge
     if (prebLane->getEdge().isInternal()) {
         // internal edges are not kept inside the bestLanes structure
@@ -1126,6 +1137,7 @@ MSLCM_LCMY::_wantsChange(
             prebLane = prebLane->getLinkCont()[0]->getLane();
         }
     }
+    */
     // NOTES: 產生 curr, neigh, best 
     // special case: vehicle considers changing to the opposite direction edge
     const int prebOffset = laneOffset;
@@ -1164,6 +1176,7 @@ MSLCM_LCMY::_wantsChange(
     const bool right = (laneOffset == -1);
     const double posOnLane = getForwardPos();
     double driveToNextStop = -std::numeric_limits<double>::max();
+    /*
     // NOTES: 處理 stop
     if (myVehicle.nextStopDist() < std::numeric_limits<double>::max()
             && &myVehicle.getNextStop().lane->getEdge() == &myVehicle.getLane()->getEdge()) {
@@ -1186,6 +1199,7 @@ MSLCM_LCMY::_wantsChange(
         currentDist = MAX2(currentDist, stopPos);
         neighDist = MAX2(neighDist, stopPos);
     }
+    */
     const int lca = (right ? LCA_RIGHT : LCA_LEFT); // NOTES: wants to go to right/left
     const int myLca = (right ? LCA_MRIGHT : LCA_MLEFT); // NOTES: originally model state
     const int lcaCounter = (right ? LCA_LEFT : LCA_RIGHT);// NOTES: 反向
@@ -1194,6 +1208,7 @@ MSLCM_LCMY::_wantsChange(
     int ret = (myOwnState & 0xffff0000);
     int req = 0; // the request to change or stay
 
+    /*
     // NOTES: slow down, maybe add ret state: LCA_AMBACKBLOCKER_STANDING, LCA_AMBACKBLOCKER 
     ret = slowDownForBlocked(lastBlocked, ret);
     if (lastBlocked != firstBlocked) {
@@ -1219,6 +1234,7 @@ MSLCM_LCMY::_wantsChange(
                   << "\n";
     }
 #endif
+    */
 
     // we try to estimate the distance which is necessary to get on a lane
     //  we have to get on in order to keep our route
@@ -1258,6 +1274,7 @@ MSLCM_LCMY::_wantsChange(
     const bool hasBidiLeader = myVehicle.getLane()->getBidiLane() != nullptr && MSLCHelper::isBidiLeader(leader.first, curr.bestContinuations);
     const bool hasBidiNeighLeader = neighLane.getBidiLane() != nullptr && MSLCHelper::isBidiLeader(neighLead.first, neigh.bestContinuations);
 
+    /*
     // NOTES: bestLaneOffset 是 0 - 代表沒有要換，但可以換到最近的 bestLane?
     if (bestLaneOffset == 0 && hasBidiLeader) {
         // getting out of the way is enough to clear the blockage
@@ -1285,6 +1302,7 @@ MSLCM_LCMY::_wantsChange(
             changeToBest = false;
         }
     }
+    */
     if (myStrategicParam < 0) {
         laDist = -1e3; // never perform strategic change
     }
@@ -1296,12 +1314,14 @@ MSLCM_LCMY::_wantsChange(
     // @note: while this lets vehicles change earlier into the correct direction
     // it also makes the vehicles more "selfish" and prevents changes which are necessary to help others
 
+    /*
     // NOTES: 圓環，沒有的話 roundaboutBonus = 0
     // Next we assign to roundabout edges a larger distance than to normal edges
     // in order to decrease sense of lc urgency and induce higher usage of inner roundabout lanes.
     const double roundaboutBonus = MSLCHelper::getRoundaboutDistBonus(myVehicle, myRoundaboutBonus, curr, neigh, best);
     currentDist += roundaboutBonus;
     neighDist += roundaboutBonus;
+    */
     // NOTES: d-o < ...
     // d: currentDist - posOnLane
     // o: best.occupation * JAM_FACTOR
@@ -1330,7 +1350,7 @@ MSLCM_LCMY::_wantsChange(
                   << " bestLaneOffset=" << bestLaneOffset
                   << " best.occupation=" << best.occupation
                   << " best.length=" << best.length
-                  << "\n roundaboutBonus=" << roundaboutBonus
+                //   << "\n roundaboutBonus=" << roundaboutBonus
                   << " maxJam=" << maxJam
                   << " neighDist=" << neighDist
                   << " neighLeftPlace=" << neighLeftPlace
@@ -1347,6 +1367,7 @@ MSLCM_LCMY::_wantsChange(
         /// @brief we urgently need to change lanes to follow our route
         ret = ret | lca | LCA_STRATEGIC | LCA_URGENT;
     } 
+    /*
     else {
         // VARIANT_20 (noOvertakeRight)
         if (neighLead.first != 0 && checkOverTakeRight && !right) {
@@ -1467,6 +1488,9 @@ MSLCM_LCMY::_wantsChange(
             ret = ret | LCA_STAY | LCA_STRATEGIC;
         }
     }
+    */
+    
+    /*
     // NOTES: 讓 traCI 介入
     // check for overriding TraCI requests
 #ifdef DEBUG_WANTS_CHANGE
@@ -1475,7 +1499,7 @@ MSLCM_LCMY::_wantsChange(
     }
 #endif
     // store state before canceling
-    getCanceledState(laneOffset) |= ret; // NOTES: getCanceledState(laneOffset) = 0 (LC_NONE)
+    // getCanceledState(laneOffset) |= ret; // NOTES: getCanceledState(laneOffset) = &myCanceledStateRight/... (LC_NONE at first)
     ret = myVehicle.influenceChangeDecision(ret);
     if ((ret & lcaCounter) != 0) {
         // we are not interested in traci requests for the opposite direction here
@@ -1486,9 +1510,11 @@ MSLCM_LCMY::_wantsChange(
         std::cout << " retAfterInfluence=" << toString((LaneChangeAction)ret) << "\n";
     }
 #endif
+    */
     if ((ret & LCA_STAY) != 0) {
+        // NOTES
         // remove TraCI flags because it should not be included in "state-without-traci"
-        ret = getCanceledState(laneOffset);
+        ret |= getCanceledState(laneOffset);
         return ret;
     }
     // NOTES: 換車道 !
@@ -1576,7 +1602,8 @@ MSLCM_LCMY::_wantsChange(
 
 
         // remove TraCI flags because it should not be included in "state-without-traci"
-        ret = getCanceledState(laneOffset);
+        // NOTES
+        ret |= getCanceledState(laneOffset);
         return ret;
     }
     
@@ -1619,6 +1646,7 @@ MSLCM_LCMY::_wantsChange(
     }
 #endif
 
+    /*
     // VARIANT_15
     // NOTES: 圓環(我們不用)
     if (roundaboutBonus > 0) {
@@ -1701,6 +1729,7 @@ MSLCM_LCMY::_wantsChange(
         }
     }
     // --------
+    */
 
 
     //// -------- security checks for krauss
@@ -1715,12 +1744,14 @@ MSLCM_LCMY::_wantsChange(
     //    return ret;
     //}
 
+    /*
     // NOTES: pedestrians
     if (neighLane.getEdge().getPersons().size() > 0) {
         // react to pedestrians
         adaptSpeedToPedestrians(myVehicle.getLane(), thisLaneVSafe);
         adaptSpeedToPedestrians(&neighLane, neighLaneVSafe);
     }
+    */
     
     const double relativeGain = (neighLaneVSafe - thisLaneVSafe) / MAX2(neighLaneVSafe,
                                 RELGAIN_NORMALIZATION_MIN_SPEED);
@@ -1738,6 +1769,7 @@ MSLCM_LCMY::_wantsChange(
     }
 #endif
 
+    /*
     // NOTES: for changing to the right (我們不用?)
     if (right) {
         // ONLY FOR CHANGING TO THE RIGHT
@@ -1908,7 +1940,7 @@ MSLCM_LCMY::_wantsChange(
             }
         }
     }
-    
+    */
     // --------
     if (changeToBest && bestLaneOffset == curr.bestLaneOffset
             && myStrategicParam >= 0
