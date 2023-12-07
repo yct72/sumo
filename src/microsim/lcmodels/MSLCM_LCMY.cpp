@@ -1112,6 +1112,7 @@ MSLCM_LCMY::_wantsChange(
         - no roundabout
         - not consider obligation to clear the overtaking lane
         - no internal edge
+        - no TraCI?
     */
     assert(laneOffset == 1 || laneOffset == -1);
     const SUMOTime currentTime = MSNet::getInstance()->getCurrentTimeStep();
@@ -1127,7 +1128,7 @@ MSLCM_LCMY::_wantsChange(
     int currIdx = 0;
     const bool checkOpposite = &neighLane.getEdge() != &myVehicle.getLane()->getEdge();
     const MSLane* prebLane = myVehicle.getLane();
-    /*
+    
     // NOTES: 處理 internal edge
     if (prebLane->getEdge().isInternal()) {
         // internal edges are not kept inside the bestLanes structure
@@ -1137,7 +1138,7 @@ MSLCM_LCMY::_wantsChange(
             prebLane = prebLane->getLinkCont()[0]->getLane();
         }
     }
-    */
+    
     // NOTES: 產生 curr, neigh, best 
     // special case: vehicle considers changing to the opposite direction edge
     const int prebOffset = laneOffset;
@@ -1176,7 +1177,7 @@ MSLCM_LCMY::_wantsChange(
     const bool right = (laneOffset == -1);
     const double posOnLane = getForwardPos();
     double driveToNextStop = -std::numeric_limits<double>::max();
-    /*
+    
     // NOTES: 處理 stop
     if (myVehicle.nextStopDist() < std::numeric_limits<double>::max()
             && &myVehicle.getNextStop().lane->getEdge() == &myVehicle.getLane()->getEdge()) {
@@ -1198,8 +1199,9 @@ MSLCM_LCMY::_wantsChange(
 #endif
         currentDist = MAX2(currentDist, stopPos);
         neighDist = MAX2(neighDist, stopPos);
+        
     }
-    */
+    
     const int lca = (right ? LCA_RIGHT : LCA_LEFT); // NOTES: wants to go to right/left
     const int myLca = (right ? LCA_MRIGHT : LCA_MLEFT); // NOTES: originally model state
     const int lcaCounter = (right ? LCA_LEFT : LCA_RIGHT);// NOTES: 反向
